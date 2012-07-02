@@ -1,0 +1,247 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="tomcat-demo" default="readme" basedir=".">
+	<property file="build.properties" />
+	<property name="checkout.project.dir" location="${project.name}/${url}" />
+	<property name="war-file-name" value="${project.name}.war" />
+	<property name="source-directory" value="${checkout.project.dir}/${project.source-directory}" />
+	<property name="classes-directory" value="${build-directory}/${project.classes-directory}" />
+	<property name="web-directory" value="${checkout.project.dir}/${project.web-directory}" />
+	<property name="web-xml-file" value="web.xml" />
+	<tstamp prefix="build-info">
+		<format property="current-date" pattern="d-MMMM-yyyy" locale="en" />
+		<format property="current-time" pattern="hh:mm:ss a z" locale="en" />
+		<format property="year-month-day" pattern="yyyy-MM-dd" locale="en" />
+		<format property="timestamp" pattern="yyyy-MM-dd-hh-mm-ss-S" locale="en" />
+	</tstamp>
+
+	<path id="tomcat.class.path">
+		<fileset dir="${tomcat.home}/lib">
+			<include name="**/*.jar"/>
+			<include name="**/*.zip"/>
+		</fileset>
+		<pathelement location="${tomcat.home}/bin/bootstrap.jar"/>
+		<pathelement location="${tomcat.home}/bin/tomcat-juli.jar"/>
+	</path>
+	
+	<path id="compile.classpath">
+		<fileset dir="${web-directory}/WEB-INF/lib">
+			<include name="*.jar"/>
+		</fileset>
+	</path>
+	
+	<taskdef name="start" classname="org.apache.catalina.ant.StartTask" ><classpath refid="tomcat.class.path"/></taskdef>
+	<taskdef name="stop" classname="org.apache.catalina.ant.StopTask" ><classpath refid="tomcat.class.path"/></taskdef>
+	<taskdef name="deploy" classname="org.apache.catalina.ant.DeployTask" ><classpath refid="tomcat.class.path"/></taskdef>
+	<taskdef name="undeploy" classname="org.apache.catalina.ant.UndeployTask" ><classpath refid="tomcat.class.path"/></taskdef>
+	
+	<macrodef name = "git">
+		<attribute name = "command" />
+		<attribute name = "dir" default = "" />
+		<element name = "args" optional = "true" />
+		<sequential>
+			<echo message = "git @{command}" />
+			<exec executable = "git" dir = "@{dir}">
+				<arg value = "@{command}" />
+				<args/>
+			</exec>
+		</sequential>
+	</macrodef>
+	<macrodef name = "git-clone-fetch">
+		<attribute name = "repository" />
+		<attribute name = "dest" />
+		<sequential>
+			<git command = "clone">
+				<args>
+					<arg value = "@{repository}" />
+					<arg value = "@{dest}" />
+				</args>
+			</git>
+			<git command = "fetch" dir = "@{dest}" />
+		</sequential>
+	</macrodef>
+	<macrodef name = "git-checkout-create-or-replace-branch">
+		<attribute name = "dest" />
+		<attribute name = "branch" />
+		<sequential>
+			<git command = "branch" dir = "@{dest}">
+				<args>
+					<arg value = "-D" />
+					<arg value = "@{branch}" />
+				</args>
+			</git>
+			<git command = "checkout" dir = "@{dest}">
+				<args>
+					<arg value = "-b" />
+					<arg value = "@{branch}" />
+				</args>
+			</git>
+		</sequential>
+	</macrodef>
+	
+	<macrodef name = "execToFile">
+		<attribute name = "command" />
+		<attribute name = "file" />
+		<attribute name = "dir" default = "" />
+		<sequential>
+			<echo message="@{command} >> @{dir}@{file}" />
+			<exec executable="/bin/sh" dir = "@{dir}" >
+				<arg value="-c"/>
+				<arg value="@{command} &gt;&gt; @{file}" />
+			</exec>
+		</sequential>
+	</macrodef>
+	
+	<target name="readme">
+		<echo message="ant deploy" />
+		<echo message="Arguments:" />
+		<echo message="Optional:" />
+		<echo message="-Durl: the git repository to pull the project from" />
+		<echo message="-Dbuild: the branch, tag, or commit to deploy" />
+		<echo />
+		<echo message="ant clean: cleans build" />
+	</target>
+	
+	<target name="stop" description="stop application in tomcat">
+		<stop url="${tomcat.manager-url}" username="${tomcat.manager-username}"
+			password="${tomcat.manager-password}" path="/${project.name}" />
+	</target>
+
+	<target name="start" description="start application in tomcat">
+		<start url="${tomcat.manager-url}" username="${tomcat.manager-username}"
+			password="${tomcat.manager-password}" path="/${project.name}" />
+	</target>
+	
+	<target name="undeploy-tomcat" description="undeploy from tomcat">
+		<undeploy 
+			failonerror="no"
+			url="${tomcat.manager-url}"
+			username="${tomcat.manager-username}"
+			password="${tomcat.manager-password}"
+			path="/${project.name}"
+		/>
+	</target>
+	
+	<target name="deploy-tomcat" description="deploy to tomcat">
+		<echo>deploying from client</echo>
+		<deploy 
+			url="${tomcat.manager-url}"
+			username="${tomcat.manager-username}"
+			password="${tomcat.manager-password}"
+			path="/${project.name}"
+			update="true"
+			war="file:${basedir}/${build-directory}/${war-file-name}"
+		/>
+		<copy file="${build-directory}/${war-file-name}" tofile="${war-cache-dir}/${project.name}_${build-info.timestamp}.war" overwrite="true" />
+	</target>
+	
+	<target name="tomcat-start">
+		<java classname="org.apache.catalina.startup.Bootstrap" fork="true" classpathref="tomcat.class.path">
+			<jvmarg value="-Dcatalina.home=${tomcat.home}"/>
+			<arg line="start"/>
+		</java>
+	</target>
+	
+	<target name="tomcat-stop" depends="tomcat-check-status" if="tomcat.started">
+		<java classname="org.apache.catalina.startup.Bootstrap" fork="true" classpathref="tomcat.class.path">
+			<jvmarg value="-Dcatalina.home=${tomcat.home}"/>
+			<arg line="stop"/>
+		</java>
+		<sleep seconds="5"/>
+	</target>
+
+	<target name="tomcat-check-status">
+		<condition property="tomcat.started">
+			<socket server="localhost" port="8080"/>
+		</condition>
+	</target>
+	
+	<target name="init">
+		<mkdir dir="${classes-directory}"/>
+		<mkdir dir="${war-cache-dir}"/>
+	</target>
+	
+	<target name="checkout">
+		<sequential>
+			<git-clone-fetch repository="${url}" dest="${checkout.project.dir}" />
+			<git command = "clean" dir = "${checkout.project.dir}">
+				<args>
+					<arg value="-f"/>
+				</args>
+			</git>
+			<git-checkout-create-or-replace-branch dest="${checkout.project.dir}" branch="prev_build" />
+			<git-checkout-create-or-replace-branch dest="${checkout.project.dir}" branch="current_build" />
+			<git command = "branch" dir = "${checkout.project.dir}">
+				<args>
+					<arg value = "-D" />
+					<arg value = "master" />
+				</args>
+			</git>
+			<echo message = "checking out ${build}" />
+			<git command = "reset" dir = "${checkout.project.dir}">
+				<args>
+					<arg value = "--hard" />
+					<arg value = "origin/${build}" />
+				</args>
+			</git>
+			<git command = "reset" dir = "${checkout.project.dir}">
+				<args>
+					<arg value = "--hard" />
+					<arg value = "${build}" />
+				</args>
+			</git>
+			<echo message="Deployed On: ${build-info.timestamp}" />
+			<git command = "tag" dir = "${checkout.project.dir}">
+				<args>
+					<arg value = "-a" />
+					<arg value = "${build-info.timestamp}" />
+					<arg value = "-m" />
+					<arg value = "'Deployment on ${build-info.timestamp}'" />
+				</args>
+			</git>
+		</sequential>
+	</target>
+	
+	<target name="deployInfo" depends="checkout">
+		<sequential>
+			<echo message="writing deployment information to deployInfo.properties"/>
+			<execToFile command="echo -n 'date='" dir = "${checkout.project.dir}" file = "deployInfo.properties"/>
+			<execToFile command="date" dir = "${checkout.project.dir}" file = "deployInfo.properties"/>
+			<execToFile command="echo -n 'build='" dir = "${checkout.project.dir}" file = "deployInfo.properties"/>
+			<execToFile command="echo ${build}" dir = "${checkout.project.dir}" file = "deployInfo.properties"/>
+			<execToFile command="echo -n 'git_hash='" dir = "${checkout.project.dir}" file = "deployInfo.properties"/>
+			<execToFile command="git rev-parse HEAD" dir = "${checkout.project.dir}" file = "deployInfo.properties"/>
+		</sequential>
+	</target>
+	
+	<target name="compile" depends="readme,checkout,deployInfo,init" >
+		<javac destdir="${classes-directory}" debug="true" srcdir="${checkout.project.dir}/src">
+			<classpath refid="compile.classpath"/>
+			<classpath refid="tomcat.class.path"/>
+		</javac>
+	</target>
+	
+	<target name="war" depends="compile">
+		<mkdir dir="${build-directory}" />
+		<delete file="${build-directory}/${war-file-name}" />
+		<war warfile="${build-directory}/${war-file-name}" webxml="${web-xml-file}">
+			<classes dir="${classes-directory}" />
+			<fileset dir="${web-directory}">
+				<!-- Need to exclude it since webxml is an attribute of the war tag above -->
+				<exclude name="WEB-INF/web.xml" />
+			</fileset>
+			<manifest>
+				<attribute name="Built-By" value="${builder}" />
+				<attribute name="Built-On" value="${build-info.current-date}" />
+				<attribute name="Built-At" value="${build-info.current-time}" />
+			</manifest>
+		</war>
+	</target>
+	
+	<target name="deploy" depends="war,deploy-tomcat" />
+	
+	<target name="clean">
+		<delete dir="${build-directory}" />
+		<delete dir="${project.name}"/>
+	</target>
+	
+</project>
