@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project name="tomcat-demo" default="readme" basedir=".">
 	<property file="build.properties" />
-	<property name="checkout.project.dir" location="${project.name}/${url}" />
+	<property name="checkout.project.dir" location="${project.name}" />
 	<property name="war-file-name" value="${project.name}.war" />
 	<property name="source-directory" value="${checkout.project.dir}/${project.source-directory}" />
 	<property name="classes-directory" value="${build-directory}/${project.classes-directory}" />
