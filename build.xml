@@ -218,6 +218,9 @@
 			<classpath refid="compile.classpath"/>
 			<classpath refid="tomcat.class.path"/>
 		</javac>
+        <copy todir="${classes-directory}">
+            <fileset dir="${source-directory}" excludes="*/.java"/>
+        </copy>
 	</target>
 	
 	<target name="war" depends="compile">
